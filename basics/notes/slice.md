@@ -229,4 +229,114 @@ func main() {
 }
 ```
 输出:
+```go
+[0] len:1 cap:1 ptr:0x140000a0008
+[0 1] len:2 cap:2 ptr:0x140000a0030
+[0 1 2] len:3 cap:4 ptr:0x140000a8020
+[0 1 2 3] len:4 cap:4 ptr:0x140000a8020
+[0 1 2 3 4] len:5 cap:8 ptr:0x140000a2080
+[0 1 2 3 4 5] len:6 cap:8 ptr:0x140000a2080
+[0 1 2 3 4 5 6] len:7 cap:8 ptr:0x140000a2080
+[0 1 2 3 4 5 6 7] len:8 cap:8 ptr:0x140000a2080
+[0 1 2 3 4 5 6 7 8] len:9 cap:16 ptr:0x140000aa000
+[0 1 2 3 4 5 6 7 8 9] len:10 cap:16 ptr:0x140000aa000
+```
+从上面的结果可以看出:
+1. append()函数将元素追加到切片的最后并返回该切片.
+2. 切片numSlice的容量按照1, 2, 4, 8, 16这样的规则自动进行扩容,每次扩容后都是扩容前的2倍.
+
+append()函数还支持一次性追加多个元素.例如:
+```go
+var citySlice []string
+// 追加一个元素
+citySlice = append(citySlice, "北京")
+// 追加多个元素
+citySlice = append(citySlice, "上海", "广州", "深圳")
+// 追加切片
+a := []string{"成都", "重庆"}
+citySlice = append(citySlice, a...)
+fmt.Println(citySlice)  // [北京 上海 广州 深圳 成都 重庆]
+```
+## 切片的扩容策略
+可以通过查看`$GOROOT/src/runtime/slice.go`源码,其中扩容相关代码如下:
+```go
+newcap := old.cap
+doublecap := newcap + newcap
+if cap > doublecap {
+    newcap = cap
+} else {
+    if old.len < 1024 {
+        newcap = doublecap
+    } else {
+        // Check 0 < newcap to detect overflow
+        // and prevent an infinite loop.
+        for 0 < newcap && newcap < cap {
+            newcap += newcap / 4
+        }
+        // Set newcap to the requested cap when
+        // the newcap calculation overflowed.
+        if newcap <= 0 {
+            newcap = cap
+        }
+    }
+}
+```
+从上面的代码可以看出以下内容:
+- 首先判断,如果新申请容量(cap)大于2倍的旧容量(old.cap),最终容量(newcap)就是新申请的容量(cap)
+- 否则判断,如果旧切片的长度小于1024,则最终容量(newcap)就是旧容量(old.cap)的两倍,即(newcap=doublecap)
+- 否则判断,如果旧切片的长度大于等于1024,则最终容量(newcap)从旧容量(old.cap)开始循环增加原来的1/4,即(newcap=old.cap, for {newcap += newcap/4})直到最终容量(newcap)大于等于新申请的容量(cap),即(newcap>=cap)
+- 如果最终容量(cap)计算值溢出,则最终容量(cap)就是新申请容量(cap).
+
+需要注意的是,切片扩容还会根据切片中元素的类型不同而做不同的处理,比如int和string类型的处理方式就不一样.
+
+## 使用copy()函数赋值切片
+首先我们来看一个问题:
+```go
+func main() {
+    a := []int{1, 2, 3, 4, 5}
+    b := a
+    fmt.Println(a)  //[1 2 3 4 5]
+    fmt.Println(b)  //[1 2 3 4 5]
+    b[0] = 1000
+    fmt.Println(a)  //[1000 2 3 4 5]
+    fmt.Println(b)  //[1000 2 3 4 5]
+}
+```
+由于切片是引用类型,所以a和b其实都指向了同一块内存地址.修改b的同时a的值也会发生变化.
+
+Go语言内建的`copy()`函数可以迅速地将一个切片的数据复制到另外一个切片空间中,`copy()`函数的使用格式如下:
+```go
+copy(destSlice, srcSlice []T)
+```
+其中:
+- srcSlice:数据来源切片
+- destSlice:目标切片
+
+举个例子:
+```go
+func main() {
+    // copy()复制切片
+    a := []int{1, 2, 3, 4, 5}
+    c := make([]int, 5, 5)
+    copy(c, a)      // 使用copy()函数将切片a中的元素复制到切片c
+    fmt.Println(a)  // [1 2 3 4 5]
+    fmt.Println(c)  // [1 2 3 4 5]
+    c[0] = 1000
+    fmt.Println(a)  // [1 2 3 4 5]
+    fmt.Println(c)  // [1000 2 3 4 5]
+}
+```
+## 从切片中删除元素
+Go语言中并没有删除切片元素的专用方法,我们可以使用切片本身的特性来删除元素.
+代码如下:
+```go
+func main() {
+    // 从切片中删除元素
+    a := []int{30, 31, 32, 33, 34, 35, 36, 37}
+    // 要删除索引为2的元素
+    a = append(a[:2], a[3:]...)
+    fmt.Println(a) // [30 31 33 34 35 36 37]
+}
+```
+总结一下就是:要从切片a中删除索引为`index`的元素,操作方法是`a = append(a[:index], a[index+1:]...)`
 
