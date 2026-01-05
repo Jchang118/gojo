@@ -2,16 +2,37 @@ package main
 
 import "fmt"
 
+func f1() int {
+	x := 5
+	defer func() {
+		x++
+	}()
+	return x
+}
+
+func f2() (x int) {
+	defer func() {
+		x++
+	}()
+	return 5
+}
+
+func f3() (y int) {
+	x := 5
+	defer func() {
+		x++
+	}()
+	return x
+}
+func f4() (x int) {
+	defer func(x int) {
+		x++
+	}(x)
+	return 5
+}
 func main() {
-	var sliceMap = make(map[string][]string, 3)
-	fmt.Println(sliceMap)
-	fmt.Println("after init")
-	key := "中国"
-	value, ok := sliceMap[key]
-	if !ok {
-		value = make([]string, 0, 2)
-	}
-	value = append(value, "北京", "上海")
-	sliceMap[key] = value
-	fmt.Println(sliceMap)
+	fmt.Println(f1())
+	fmt.Println(f2())
+	fmt.Println(f3())
+	fmt.Println(f4())
 }
