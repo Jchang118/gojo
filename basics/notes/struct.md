@@ -88,6 +88,7 @@ type person struct {
 ```go
 var 结构体实例 结构体类型
 ```
+### 基本实例化
 举个例子:
 ```go
 type person struct {
@@ -107,5 +108,64 @@ func main() {
 ```
 我们可以通过`.`来访问结构体的字段(成员变量),例如`p1.name`和`p1.age`等.
 
-## 匿名结构体
+### 匿名结构体
+在定义一些临时数据结构等场景下还可以使用匿名结构体.
+```go
+package main
+
+import (
+    "fmt"
+)
+
+func main() {
+    var user struct{Name string; Age int}
+    user.Name = "小王子"
+    user.Age = 18
+    fmt.Printf("%#v\n", user)
+}
+```
+### 创建指针类型结构体
+我们还可以通过`new`关键字对结构体进行实例话,得到的是结构体的地址.格式如下:
+```go
+var p2 = new(person)
+fmt.Printf("%T\n")          // *main.person
+fmt.Printf("p2=%#v\n", p2)  // p2=&main.person{name:"", city:"", age:0}
+```
+从打印的结果中我们可以看出`p2`是一个结构体指针.
+
+需要注意的是在Go语言中支持对结构体指针直接使用`.`来访问结构体的成员.
+```go
+var p2 = new(person)
+p2.name = "小王子"
+p2.age = 28
+p2.city = "上海"
+fmt.Printf("p2=%#v\n", p2)  // p2=&main.person{name:"小王子", city:"上海", age:28}
+```
+### 取结构体的地址实例化
+使用`&`对机构体进行取地址操作相当于对该结构体类型进行了一次`new`实例话操作.
+```go
+p3 := &person{}
+fmt.Printf("%T\n", p3)      // *main.person
+fmt.Printf("p3=%#v\n", p3)  // p3=&main.person{name:"", city:"", age:0}
+p3.name = "七米"
+p3.age = 30
+p3.city = "成都"
+fmt.Printf("p3=%#v\n", p3)  // p3=&main.person{name:"七米", city:"成都", age:30}
+```
+`p3.name = "七米"`其实在底层是`(*p3).name = "七米"`,这是Go语言帮我们实现的语法糖.
+
+## 结构体初始化
+没有初始化的结构体,其成员变量都是对应其类型的零值.
+```go
+type person struct {
+    name    string
+    city    string
+    age     int8
+}
+
+func main() {
+    var p4 person
+    fmt.Printf("p4=%#v\n", p4) // p4=main.person{name:"", city:"", age:0}
+}
+```
 
