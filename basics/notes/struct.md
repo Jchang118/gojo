@@ -176,6 +176,6 @@ p5 := person{
     city: "北京",
     age:  18,
 }
-fmt.Printf("p5=%#v\n", p5) //p5=main.person{name:"小王子", city:"北京", age:18}
+fmt.Printf("p5=%#v\n", p5) // p5=main.person{name:"小王子", city:"北京", age:18}
 ```
 也可以对结构体指针进行键值对初始化,例如:
