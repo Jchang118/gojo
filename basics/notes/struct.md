@@ -210,4 +210,295 @@ fmt.Printf("p8=%#v\n", p8) // p8=&main.person{name:"沙河娜扎", city:"北京"
 3. 该方法不能和键值初始化方式混用.
 
 ## 结构体内存布局
+结构体占用一块连续的内存.
+```go
+type test struct {
+    a int8
+    b int8
+    c int8
+    d int8
+}
+n := test{
+    1, 2, 3, 4,
+}
+fmt.Printf("n.a %p\n", &n.a)
+fmt.Printf("n.b %p\n", &n.b)
+fmt.Printf("n.c %p\n", &n.c)
+fmt.Printf("n.d %p\n", &n.d)
+```
+输出:
+```go
+n.a 0xc0000a0060
+n.b 0xc0000a0061
+n.c 0xc0000a0062
+n.d 0xc0000a0063
+```
+**进阶知识点:** 关于Go语言中的内存对齐推荐阅读 -> Go语言结构体的内存布局.
+
+### 空结构体
+空结构体是不占用空间的.
+```go
+var v struct{}
+fmt.Println(unsafe.Sizeof(v)) // 0
+```
+## 面试题
+请问下面代码的执行结果是什么?
+```go
+type student struct {
+    name    string
+    age     int
+}
+
+func main() {
+    m := make(map[string]*student)
+    stus := []student{
+        {name: "小王子", age: 18},
+        {name: "娜扎", age: 23},
+        {name: "大王八", age: 9000},
+    }
+
+    for _, stu := range stus {
+        m[stu.name] = &stu
+    }
+    for k, v := range m {
+        fmt.Println(k, "=>", v.name)
+    }
+}
+```
+Go1.22后输出(for _, stu := range stus{...}, stu为不同的副本,不同的临时变量):
+```go
+小王子 => 小王子
+娜扎 => 娜扎
+大王八 => 大王八
+```
+Go1.22之前输出(for _, stu := range stus{...}, stu为同一的副本,同一个临时变量):
+```go
+小王子 => 大王八
+娜扎 => 大王八
+大王八 => 大王八
+```
+## 构造函数
+Go语言的结构体没有构造函数,我们可以自己实现.例如,下方的代码就实现了一个`person`的构造函数.因为`struct`是值类型,如果结构体比较复杂的话,值拷贝性能开销比较大,所以该构造函数返回得失结构体指针类型.
+```go
+func newPerson(name, city string, age int8) *person {
+    return &person{
+        name:   name,    
+        city:   city,
+        age:    age,
+    }
+}
+```
+调用构造函数:
+```go
+p9 := newPerson("张三", "沙河", 90)
+fmt.Printf("%#v\n", p9) // &main.person{name:"张三", city:"沙河", age:90}
+```
+## 方法和接收者
+Go语言中的`方法(Method)`是一种作用于特定类型变量的函数.这种特定类型变量叫做`接收者(Receiver)`.接收者的概念就类似于其他语言中的`this`或者`self`.
+
+方法的定义格式如下:
+```go
+func (接收者变量 接收者类型) 方法名(参数列表) (返回参数) {
+    函数体
+}
+```
+其中:
+- 接收者变量: 接收者中的参数变量名在命名时,官方建议使用接收者类型名称首字母的小写,而不是self、this之类的命名.例如,Person类型的接收者变量应该命名为p,Connector类型的接收者变量应该命名为c等.
+- 接收者类型: 接收者类型和参数类似,可以是指针类型和非指针类型.
+- 方法名、参数列表、返回参数: 具体格式与函数定义相同.
+
+举个例子:
+```go
+// Person 结构体
+type Person struct {
+    name    string
+    age     int8
+}
+
+// NewPerson 构造函数
+func NewPerson(name string, age int8) *Person {
+    return &Person{
+        name:   name,
+        age:    age,
+    }
+}
+
+// Dream Person做梦的方法
+func (p Person) Dream() {
+    fmt.Printf("%s的梦想时学好Go语言!\n", p.name)
+}
+
+func main() {
+    p1 := NewPerson("小王子", 25)
+    p1.Dream()
+}
+```
+方法与函数的区别是,函数不属于任何类型,方法属于特定的类型.
+
+### 指针类型的接收者
+指针类型的接收者由一个结构体的指针组成,由于指针的特性,调用方法时修改接收者指针的任意成员变量,在方法结束后,修改都是有效的.这种方式就十分接近于其他语言中面向对象中的`this`或者`self`.例如我们为`Person`添加一个`SetAge`方法,来修改实例变量的年龄.
+```go
+// SetAge 设置p的年龄
+// 使用指针接收者
+func (p *Person) SetAge(newAge int8) {
+    p.age = newAge
+}
+```
+调用该方法:
+```go
+func main() {
+    p1 := NewPerson("小王子", 25)
+    fmt.Println(p1.age) // 25
+    p1.SetAge(30)
+    fmt.Println(p1.age) // 30
+}
+```
+### 值类型的接收者
+当方法作用于值类型接收者时,Go语言会在代码运行时将接收者的值复制一份.在值类型接收者的方法中可以获取接收者的成员值,但修改操作只是针对副本,无法修改接收者变量本身.
+```go
+// SetAge2 设置p的年龄
+// 使用值接收者
+func (p Person) SetAge2(newAge int8) {
+    p.age = newAge
+}
+
+func main() {
+    p1 := newPerson("小王子", 25)
+    p1.Dream()
+    fmt.Println(p1.age) //25
+    p1.SetAge2(30) // (*p1).SetAge2(30)
+    fmt.Println(p1.age) //25
+}
+```
+### 什么时候应该使用指针类型接收者
+1. 需要修改接收者中的值
+2. 接收者时拷贝代价比较大的大对象
+3. 保持一致性,如果有某个方法使用了指针接收者,那么其他的方法也应该使用指针接收者.
+
+## 任意类型添加方法
+在Go语言中,接收者的类型可以是任何类型,不仅仅是结构体,任何类型都可以拥有方法.举个例子,我们基于内置的`int`类型使用type关键字可以定义新的自定义类型,然后为我们的自定义类型添加方法.
+```go
+// MyInt 将int定义为自定义MyInt类型
+type MyInt int
+
+// SayHello 为MyInt添加一个SayHello的方法
+fmt (m MyInt) SayHello() {
+    fmt.Println("Hello,我是一个int.")
+}
+
+func main() {
+    var m1 MyInt
+    ma.SayHello() //Hello,我是一个int.
+    m1 = 100
+    fmt.Printf("%#V %T\n", m1, m1) // 100 main.MyInt }
+```
+**注意事项:** 非本地类型不能定义方法,也就是说我们不能给别的包的类型定义方法.
+
+## 结构体的匿名字段
+结构体允许其成员字段在声明时没有字段名而只有类型,这种没有名字的字段就称为匿名字段.
+```go
+type Person struct {
+    string
+    int
+}
+
+func main() {
+    p1 := Person{
+        "小王子",
+        18,
+    }
+    fmt.Printf("%#v\n", p1)         // main.Person{string:"北京", int:18}
+    fmt.Println(p1.string, p1.int)  // 北京 18
+}
+```
+**注意:** 这里匿名字段的说法并不代表没有字段名,而是默认会采用类型名作为字段名,结构体要求字段名称必须唯一,因此一个结构体同种类型的匿名字段只能有一个.
+
+## 嵌套结构体
+一个结构体中可以嵌套包含另一个结构体或结构体指针,就像下面的示例代码那样.
+```go
+// Address 地址结构体
+type Address struct {
+    Province    string
+    City        string
+}
+
+// User 用户结构体
+type User struct {
+    Name    string
+    Gender  string
+    Address Address
+}
+
+func main() {
+    user1 := User{
+        Name:       "小王子",     
+        Gender:     "男",
+        Address:    Address{
+            Province:   "山东",
+            City:       "威海",
+        },
+    }
+    fmt.Printf("user1=%#v\n", user1) // user1=main.User{Name:"小王子", Gender:"男", Address:main.Address{Province:"山东", City:"威海"}}
+}
+```
+### 嵌套匿名字段
+上面user结构体中嵌套的`Address`结构体也可以采用匿名字段的方式,例如:
+```go
+// Address 地址结构体
+type Address struct {
+    Province    string
+    City        string
+}
+
+// User 用户结构体
+type User struct {
+    Name    string
+    Gender  string
+    Address // 匿名字段
+}
+
+func main() {
+    var user2 User 
+    user2.Name = "小王子"
+    user2.Gender = "男"
+    user2.Address.Province = "山东" // 匿名字段默认使用类型名作为字段名
+    user2.City = "威海"             // 匿名字段可以省略
+    fmt.Printf("user2=%#v\n", user2) // user2=main.User{Name:"小王子", Gender:"男", Address:main.Address{Province:"山东", City:"威海"}}
+}
+```
+当访问结构体成员时会现在结构体中查找该字段,找不到再去嵌套的匿名字段中查找.
+
+### 嵌套结构体的字段名冲突
+嵌套结构体内部可能存在相同的字段名.在这种情况下为了避免歧义需要通过指定具体的内嵌结构体字段名.
+```go
+// Address 地址结构体
+type Address struct {
+    Province    string
+    City        string
+    CreateTime  string
+}
+
+// Email 邮箱结构体
+type Email struct {
+    Account     string
+    CreateTime  string
+}
+
+// User 用户结构体
+type User struct {
+    Name        string
+    Gender      string
+    Address
+    Email
+}
+
+func main() {
+    var user3 User    
+    user3.Name = "沙河娜扎"
+    user3.Gender = "男"
+    // user3.CreateTime = "2019" // ambiguous selector user3.CreateTime
+    user3.Address.CreateTime = "2000" //指定Address结构体中的CreateTime
+    user3.Email.CreateTime = "2000"   //指定Email结构体中的CreateTime
+}
+```
 
