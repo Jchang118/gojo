@@ -191,8 +191,8 @@ Go语言在go module的过渡阶段提供了`GO111MODULE`这个环境变量来�
 这个环境变量主要是用于设置Go模块代理(Go module proxy),其作用是用于使Go在后续拉取模块版本时能够脱离传统的VCS方式,直接通过镜像站点来快速拉取.
 
 GOPROXY的默认值是:`https://proxy.golang.org,direct`,由于某些原因国内无法正常访问该地址,所以我们通常需要配置一个可访问的地址.目前社区使用比较多的有两个`https://goproxy.cn`和`https://goproxy.io`,当然如果你的公司有提供GOPROXY地址那么就直接使用.设置GOPROXY的命令如下:
-```go
-go env -w GOPROXY=https://goproxy.cn,direct
+```bash
+$ go env -w GOPROXY=https://goproxy.cn,direct
 ```
 GOPROXY允许设置多个代理地址,多个地址之间需使用英文逗号","分隔.最后的"direct"是一个特殊指示符,用于指示Go回源到源地址去抓取(比如GitHub等).当配置有多个代理地址时,如果第一个代理地址返回404或410错误时,Go会自动尝试下一个代理地址,当遇见"direct"时触发回源,也就是回到源地址去抓取.
 
@@ -200,10 +200,59 @@ GOPROXY允许设置多个代理地址,多个地址之间需使用英文逗号","
 设置了GOPROXY之后,go命令就会从配置的代理地址拉取和校验依赖包.当我们在项目中引入非公开的包(公司内部git仓库或github私有仓库等),此时便无法正常从代理拉取到这些非公开的依赖包,这个时候就需要配置GOPRIVATE环境变量.GOPRIVATE用来告诉go命令哪些仓库属于私有仓库,不必通过代理服务器拉取和校验.
 
 GOPRIVATE的值也可以设置多个,多个地址之间使用英文逗号","分隔.我们通常会把自己公司内部的代码仓库设置到GOPRIVATE中,例如:
-```go
-go env -w GOPRIVATE="git.mycompany.com"
+```bash
+$ go env -w GOPRIVATE="git.mycompany.com"
 ```
 这样在拉取以`git.mycompany.com`为路径前缀的依赖包时就能正常拉取了.此外,如果公司内部自建了GOPROXY服务,那么我们就可以通过设置`GONOPROXY=none`,允许通过内部代理拉取私有仓库的包.
 
 ## 使用go module引入包
+接下来我们将通过一个示例来演示如何在开发项目时使用go module拉取和管理项目依赖.
 
+**初始化项目**我们在本地新建一个名为`holiday`项目,按如下方式创建一个名为`holiday`的文件夹并切换到该目录下:
+```bash
+$ mkdir holiday
+$ cd holiday
+```
+目前我们位于`holiday`文件夹下,接下来执行下面的命令初始化项目.
+```bash
+$ go mod init holiday
+go: creating new go.mod: module holiday
+```
+该命令会自动在项目目录下创建一个`go.mod`文件,其内容如下.
+```mod
+module holiday
+
+go 1.16
+```
+其中:
+- module holiday: 定义当前项目的导入路径
+- go 1.16: 标识当前项目使用的Go版本
+
+`go.mod`文件会记录项目使用的第三方依赖包信息,包括包名和版本,由于我们的`holiday`项目目前还没有使用到第三方依赖包,所以`go.mod`文件暂时还没有记录任何依赖包信息,只有当前项目的一些信息.
+
+接下来,我们在项目目录下新建一个`main.go`文件,其内容如下:
+```go
+// holiday/main.go
+
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("现在是假期时间...")
+}
+```
+然后,我们的`holiday`项目现在需要引入一个第三方包`github.com/q1mi/hello`来实现一些必要的功能.类似这样的场景在我们的日常开发中时很常见的.我们需要先将依赖包下载到本地同时在`go.mod`中记录依赖信息,然后我们才能在我们的代码中引入并使用这个包.下载依赖包主要有两种方法.
+
+第一种方法是在项目目录下执行`go get`命令手动下载依赖的包:
+```bash
+holiday $ go get -u github.com/q1mi/hello
+go get: added github.com/q1mi/hello v0.1.1
+```
+这样默认会下载最新的发布版本,你也可以指定想要下载的版本号.
+```bash
+holiday $ go gest -u github.com/q1mi/hello@0.1.0
+go: downloading github.com/q1mi/hello v0.1.0
+go get: downgraded github.com/q1mi/hello v0.1.1 => v0.1.0
+```
+如果依赖包没有发布任何版本则会拉取最新的提交,最终`go.mod`中的依赖
