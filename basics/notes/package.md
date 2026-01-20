@@ -433,5 +433,129 @@ require module/path v1.2.3
 引入某些没有发布过`tag`版本标识的依赖包时,`go.mod`中记录的依赖版本信息就会出现类似`v0.0.0-20210218074646-139b0bcd549d`的格式,由版本号,commit时间和commit的hash值组成.
 ![module_version](img/module_version_info.png)
 
+**go.sum文件**
+使用go.module下载了依赖后,项目目录下还会生成一个`go.sum`文件,这个文件中详细记录了当前项目中引入的依赖包的信息及其hash值.`go.sum`文件内容通常是以类似下面的格式出现.
+```sum
+<module> <version>/go.mod <hash>
+```
+或者
+```sum
+<module> <version> <hash>
+<module> <version>/go.mod <hash>
+```
+不同于其他语言提供的基于中心的包管理机制,例如npm和pypi等,Go语言并没有提供一个中央仓库来管理所有依赖包,而是采用分布式的方式管理包.为了防止依赖包被非法篡改,Go module引入了`go.sum`机制来对依赖包进行校验.
 
+**依赖保存位置**
+Go module会把下载到本地的依赖包以类似下面的形式保存在`$GOPATH/pkg/mod`目录下,每个依赖包都会带有版本号进行区分,这样就允许在本地存在同一个包的多个不同版本.
+```bash
+mod
+├── cache
+├── cloud.google.com
+├── github.com
+    	└──q1mi
+          ├── hello@v0.0.0-20210218074646-139b0bcd549d
+          ├── hello@v0.1.1
+          └── hello@v0.1.0
+...
+```
+如果想清楚所有本地已缓存的依赖包数据,可以执行`go clean -modcache`命令.
 
+## 使用go module发布包
+在上面的小节中我们学习了如何在项目中引入别人提供的依赖包,那么当我们想要在社区发布一个自己编写的代码包或者在公司内部编写一个供内部使用的公用组件时,我们该怎么做呢?接下来,我们就一起编写一个代码包并将它发布到`github.com`仓库,让它能够被全球的Go语言开发者使用.
+
+我们首先在自己的github账号下新建一个项目,并把它下载到本地.我这里就以创建和发布一个名为`hello`的项目为例进行演示.这个`hello`包将对外提供一个名为`SayHi`的函数,它的作用非常简单就是向调用者发去问候.
+```bash
+$ git clone https://github.com/q1mi/hello
+$ cd hello
+```
+我们当前位于`hello`项目目录下,执行下面的命令初始化项目,创建`go.mod`文件.需要注意的是这里定义项目的引入路径为`github.com/q1mi/hello`,读者在自行测试时需要将这部分替换为自己的的仓库路径.
+```bash
+hello $ go mod init github.com/q1mi/hello
+go: creating new go.mod: module github.com/q1mi/hello
+```
+接下来我们在该项目根目录下创建`hello.go`文件,添加下面的内容:
+```go
+package hello
+
+import "fmt"
+
+func SayHi() {
+    fmt.Println("你好,我是七米.很高兴认识你.")
+}
+```
+然后将该项目的代码push到仓库的远端分支,这样就对外发布了一个Go包.其他的开发者可以通过`github.com/q1mi/hello`这个引入路径下载并使用这个包了.
+
+一个设计完善的包应该包含开源许可证及文档等内容,并且我们还应该尽心维护并适时发布适当的版本.github上发布版本号使用git tag为代码包打赏标签即可.
+```bash
+hello $ git tag -a v0.1.0 -m "release version v0.1.0"
+hello $ git push origin v0.1.0
+```
+经过上面的操作我们就发布了一个版本号为`v0.1.0`的版本.
+
+Go module中建议使用语义化版本控制,其建议的版本号格式如下:
+![version_number](img/version_number.png)
+其中:
+- 主版本号: 发布了不兼容的版本迭代时递增(breaking changes).
+- 次版本号: 发布了功能性更新时递增.
+- 修订号: 发布了bug修复类更新时递增.
+
+**发布新的主版本**
+现在我们的`hello`项目要进行与之前版本不兼容的更新,我们计划让`SayHi`函数支持向指定人发出问候.更新后的`SayHi`函数内容如下:
+```go
+package main
+
+import "fmt"
+
+// SayHi 向指定人打招呼的函数
+func main(name string) {
+    fmt.Printf("你好%s,我是七米.很高兴认识你.\n", name)
+}
+```
+由于这次改动巨大(修改了函数之前的调用规则),对之前使用该包作为依赖的用户影响巨大.因此我们需要发布一个主版本号递增的`v2`版本.在这种情况下,我们通常会修改当前包的引入路径,像下面的示例一样为引入路径添加版本后缀.
+```mod
+// hello/go.mod
+
+module github.com/q1mi/hello/v2
+
+go 1.16
+```
+把修改后的代码提交:
+```bash
+hello $ git add .
+hello $ git commit -m "feat: SayHi现在支持给指定人打招呼啦"
+hello $ git push
+```
+打好tag推送到远程仓库.
+```bash
+hello $ git tag -a v2.0.0 -m "release version v2.0.0"
+hello $ git push origin v2.0.0
+```
+这样在不影响使用旧版本的用户的前提下,我们新的版本也发布出去了.想要使用`v2`版本的代码包的用户只需要按修改后的引入路径下载即可.
+```bash
+go get github.com/q1mi/hello/v2@v2.0.0
+```
+在代码中使用的过程与之前类似,只是需要注意引入路径要添加v2版本后缀.
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/q1mi/hello/v2" // 引入v2版本
+)
+
+func main() {
+    fmt.Println("现在是假期时间...")
+
+    hello.SayHi("张三") // v2版本的SayHi函数需要传入字符串参数
+}
+```
+**废弃已发布版本**
+如果某个发布的版本存在致命缺陷不再想让用户使用时,我们可以使用`retract`声明废弃的版本.例如我们在`hello/go.mod`文件中按如下方式声明即可对外废弃`v0.1.2`版本.
+```mod
+module github.com/q1mi/hello
+
+go 1.16
+
+retract v0.1.2
+```
+用户使用go get下载`v0.1.2`版本时就会收到提示,催促其升级到其他版本.
