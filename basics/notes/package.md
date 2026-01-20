@@ -255,4 +255,183 @@ holiday $ go gest -u github.com/q1mi/hello@0.1.0
 go: downloading github.com/q1mi/hello v0.1.0
 go get: downgraded github.com/q1mi/hello v0.1.1 => v0.1.0
 ```
-如果依赖包没有发布任何版本则会拉取最新的提交,最终`go.mod`中的依赖
+如果依赖包没有发布任何版本则会拉取最新的提交,最终`go.mod`中的依赖信息会变成类似下面这种由默认v0.0.0的版本号和最新一次commit的时间和hash组成的版本格式:
+```mod
+require github.com/q1mi/hello v0.0.0-20210218074646-139b0bcd549d
+```
+如果想指定下载某个commit对应的代码,可以直接指定commit hash,不过没有必要写出完整的commit hash,一般前7位即可.例如:
+```bash
+holiday $ go get github.com/q1mi/hello@2ccfadd
+go: downloading github.com/q1mi/hello v0.1.2-0.20210219092711-2ccfaddad6a3
+go get: added github.com/q1mi/hello v0.1.2-0.20210219092711-2ccfaddad6a3
+```
+此时,我们打开`go.mod`文件就可以看到下载的依赖包及版本信息都已经被记录下来了.
+```mod
+module holiday
+
+go 1.16
+
+require github.com/q1mi/hello v0.1.0 // indirect
+```
+行尾的`indirect`表示该依赖包为间接依赖,说明在当前程序中的所有import语句中没有发现引入这个包.
+
+另外在执行`go get`命令下载一个新的依赖包时一般会额外添加`-u`参数,强制更新现有依赖.
+
+第二种方式是我们直接编辑`go.mod`文件,将依赖包和版本信息写入该文件.例如我们修改`holiday/go.mod`文件内容如下:
+```mod
+module holiday
+
+go 1.16
+
+require github.com/q1mi/hello latest
+```
+表示当前项目需要使用`github.com/q1mi/hello`库的最新版本,然后在项目目录下执行`go mod download`下载依赖包.
+```bash
+holiday $ go mod download
+```
+如果不输出其他提示信息就说明依赖已经下载成功,此时`go.mod`文件已经变成如下内容.
+```mod
+module holiday
+
+go 1.16
+
+require github.com/q1mi/hello v0.1.1
+```
+从中我们可以知道最新的版本号是`v0.1.1`.如果事先知道依赖包的具体版本号,可以直接在`go.mod`中指定需要的版本然后再执行`go mod download`下载.
+
+这种方法同样支持指定想要下载的commit进行下载,例如直接在`go.mod`文件中按如下方式指定commit hash,这里只写出来了commit hash的前7位.
+```mod
+require github.com/q1mi/hello 2ccfadda
+```
+执行`go mod download`下载完依赖后,`go.mod`文件中对应的版本信息会自动更新位类似下面的格式.
+```mod
+module holiday
+
+go 1.16
+
+require github.com/q1mi/hello v0.1.2-0.20210219092711-2ccfaddad6a3
+```
+下载好要使用的依赖包之后,我们现在就可以在`holiday/main.go`文件中使用这个包了.
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/q1mi/hello"
+)
+
+func main() {
+    fmt.Println("现在是假期时间...")
+    hello.SayHi() // 调用hello包的SayHi函数
+}
+```
+将上述代码编译执行,就能看到执行结果了.
+```bash
+holiday $ go build
+holiday $ ./holiday
+现在是假期时间...
+你好,我是七米.很高兴认识你.
+```
+当我们的项目功能越做越多,代码越来越多的时候,通常会选择在项目内部按功能或业务划分成多个不同包.Go语言支持在一个项目(project)下定义多个包(package).
+
+例如,我们在`holiday`项目内部创建一个新的package--`summer`,此时新的项目目录结构如下:
+```bash
+holidy
+├── go.mod
+├── go.sum
+├── main.go
+└── summer
+    └── summer.go
+```
+其中`holiday/summer/summer.go`文件内容如下:
+```go
+package summer
+
+import "fmt"
+
+// Diving 潜水...
+func Diving() {
+    fmt.Println("夏天去诗巴丹潜水...")
+}
+```
+此时想要在当前项目目录下的其他包或者`main.go`中调用这个`Diving`函数需要如何引入呢?这里以在`main.go`中演示详细的调用过程为例,在项目内其他包的引入方式类似.
+```go
+package main
+
+import (
+    "fmt"
+    "holiday/summer" // 导入当前项目下的包
+    "github.com/q1mi/hello" // 导入github上第三方包
+)
+
+func main() {
+    fmt.Println("现在是假期时间...")
+    hello.SayHi()
+    summer.Diving()
+}
+```
+从上面的示例可以看出,项目中定义的包都会以项目的导入路径为前缀.
+
+如果你想要导入本地的一个包,并且这个包也没有发布到其他任何代码仓库,这时候你可以在`go.mod`文件中使用`replace`语句将依赖临时替换为本地的代码包.例如在我的电脑上有另外一个名为`liwenzhou.com/overtime`的项目,它位于`holiday`项目同级目录下:
+```bash
+├── holiday
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   └── summer
+│       └── summer.go
+└── overtime
+    ├── go.mod
+    └── overtime.go
+```
+由于`liwenzhou.com/overtime`包只存在于我本地,并不能通过网络获取到这个代码包,这个时候应该如何在`holiday`项目中引入它呢?
+
+我们可以在`holiday/go.mod`文件中正常引入`liwenzhou.com/overtime`包,然后像下面的示例那样使用`replace`语句将这个依赖替换为使用相对路径表示的本地包.
+```mod
+module holiday
+
+go 1.16
+
+require github.com/q1mi/hello v0.1.1
+require liwenzhou.com/overtime v0.0.0
+
+replace liwenzhou.com/overtime => ../overtime
+```
+这样,我们就可以在`holiday/main.go`下正常引入并使用`overtime`包了.
+```go
+package main
+
+import (
+    "fmt"
+    "holiday/summer" // 导入当前项目下的包
+    "liwenzhou.com/overtime" // 通过replace导入的本地包
+    "github.com/q1mi/hello" // 导入github上第三方包
+)
+
+func main() {
+    fmt.Println("现在是假期时间...")
+    hello.SayHi()
+    summer.Diving()
+    overtime.Do()
+}
+```
+我们也经常使用`replace`将项目依赖中的某个包,替换为其他版本的代码包或我们自己修改后的代码包.
+
+**go.mod文件**
+`go.mod`文件中记录了当前项目中所有依赖包的相关信息,声明依赖的格式如下:
+```mod
+require module/path v1.2.3
+```
+其中:
+- require: 声明依赖的关键字
+- module/path: 依赖包的引入路径
+- v1.2.3: 依赖包的版本号.支持以下几种格式:
+  - latest: 最新版本
+  - v1.0.0: 详细版本号
+  - commit hash: 指定某次commit hash
+
+引入某些没有发布过`tag`版本标识的依赖包时,`go.mod`中记录的依赖版本信息就会出现类似`v0.0.0-20210218074646-139b0bcd549d`的格式,由版本号,commit时间和commit的hash值组成.
+![module_version](img/module_version_info.png)
+
+
+
