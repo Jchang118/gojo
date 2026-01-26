@@ -581,4 +581,71 @@ fmt.Println(x == y) // false
 var z interface{} = []int{1, 2, 3}
 fmt.Println(z == z) // panic: runtime error: comparing uncomparable type []int
 ```
+## 类型断言
+接口值可能赋值为任意类型的值,那我们如何从接口值获取其存储的具体数据呢?
 
+我们可以借助标准库`fmt`包的格式化打印获取到接口值的动态类型.
+```go
+var m Mover
+
+m = &Dog{Name: "旺财"}
+fmt.Printf("%T\n", m) // *main.Dog
+
+m = new(Car)
+fmt.Printf("%T\n", m) // *main.Car
+```
+而`fmt`包内部其实是使用反射的机制在程序运行时获取到动态类型的名称.关于反射的内容我们会在后续章节详细介绍.
+
+而想要从接口值中获取到对应的实际值需要使用类型断言,其语法格式如下.
+```
+x.(T)
+```
+其中:
+- x: 表示接口类型的变量
+- T: 表示断言x可能是的类型
+
+该语法返回两个参数,第一个参数是`x`转化为`T`类型后的变量,第二个值是一个布尔值,若为`true`则表示断言成功,为`false`则表示断言失败.
+
+举个例子:
+```go
+var n Mover = &Dog{Name: "旺财"}
+v, ok := n.(*Dog)
+if ok {
+    fmt.Println("类型断言成功")
+    v.Name = "富贵" // 变量v是*Dog类型
+} else {
+    fmt.Println("类型断言失败")
+}
+```
+如果对一个接口值有多个实际类型需要判断,推荐使用`switch`语句来实现.
+```go
+// justifyType 对传入的空接口类型变量x进行类型断言
+func justifyType(x interface{}) {
+    switch v := x.(type) {
+    case string:
+        fmt.Printf("x is a string, value is %v\n", v)
+    case int:
+        fmt.Printf("x is an int, value is %v\n", v) 
+    case bool:
+        fmt.Printf("x is a bool, value is %v\n", v)
+    default:
+        fmt.Println("unsupport type!")
+    }
+}
+```
+由于接口类型变量能够动态存储不同类型值的特点,所以很多初学者会滥用接口类型(特别是空接口)来实现编码过程中的便捷.只有当有两个或两个以上的具体类型必须以相同的方式进行处理时才需要定义接口.切记不要为了使用接口类型而增加不必要的抽象,导致不必要的运行时损耗.
+
+在Go语言中接口时一个非常重要的概念和特性,使用接口类型能够实现代码的抽象和解耦,也可以隐藏某个功能的内部实现,但是缺点就是在查看源码的时候,不太方便查找到具体实现接口的类型.
+
+相信很多读者在刚接触到接口类型时都会有很多疑惑,请牢记接口是一种类型,一种抽象的类型.区别于我们在之前章节提到的那些具体类型(整型、数组、结构体类型等),它是一个只要求实现特定方法的抽象类型.
+
+**小技巧:** 下面的代码可以在程序编译阶段验证某一结构体是否满足特定的接口类型.
+```go
+// 摘自gin框架routergroup.go
+type IRouter interface{ ... }
+
+type RouterGroup struct { ... }
+
+var _ IRouter = &RouterGroup{} // 确保RouterGroup实现了接口IRouter
+```
+上面的代码中也可以使用`var _ IRouter = (*RouterGroup)(nil)`进行验证.
