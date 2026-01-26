@@ -162,5 +162,423 @@ func main() {
 ```
 随着业务的发展,根据用户需求添加支付微信支付.
 ```go
+type WeChat struct {
+    // 微信
+}
 
+// Pay 微信的支付方法
+func (w *WeChat) Pay(amount int64) {
+    fmt.Printf("使用微信付款: %.2f.\n", float64(amount/100))
+}
 ```
+在实际的交易流程中,我们可以根据客户选择的支付方式来决定最终调用支付宝的Pay方法还是微信支付的Pay方法.
+```go
+// Checkout 支付宝结账
+func CheckoutWithZFB(obj *ZhiFuBao) {
+    // 支付100元
+    obj.Pay(100)
+}
+
+// Checkout 微信结账
+func CheckoutWithWX(obj *WeChat) {
+    // 支付100元
+    obj.Pay(100)
+}
+```
+实际上,从上面的代码示例中我们可以看出,我们其实并不怎么关心用户选择的是什么支付方式,我们只关心调用Pay方法时能否正常运行.这就是典型的“不关心它是什么,只关心它能做什么”的场景.
+
+在这种场景下我们可以将具体的支付方式抽象为一个名为`Payer`的接口类型,即任何实现了`Pay`方法的都可以称为`Payer`类型.
+```go
+type Payer interface {
+    Pay(int64)
+}
+```
+此时只需要修改原始的`Checkout`函数,它接收一个`Payer`类型的参数.这样就能够在不修改既有函数调用的基础上,支持新的支付方式.
+```go
+// Checkout 结账
+func Checkout(obj Payer) {
+    // 支付100元
+    obj.Pay(100)
+}
+
+func main() {
+    Checkout(&ZhiFuBao{}) // 之前调用支付宝支付
+
+    Checkout(&WeChat{}) // 现在支持使用微信支付
+}
+```
+像类似的例子在我们编程过程中会经常遇到:
+- 比如一个网上商城可能使用支付宝、微信、银联等方式去在线支付,我们能不能把它们当成“支付方式”来处理呢?
+- 比如三角形,四边形,圆形都能计算周长和面积,我们能不能把它们当成“图形”来处理呢?
+- 比如满减券、立减券、打折券都属于电商场景下常见的优惠方式,我们能不能把它们当成“优惠券”来处理呢?
+
+接口类型是Go语言提供的一种工具,在实际的编码过程中是否使用它由你自己决定,但是通常使用接口类型可以使代码更清晰易读.
+
+### 接口类型变量
+那实现了接口又有什么用呢?一个接口类型的变量能够存储所有实现了该接口的类型变量.
+
+例如在上面的示例中,`Dog`和`Cat`类型均实现了`Sayer`接口,此时一个`Sayer`类型的变量就能够接收`Cat`和`Dog`类型的变量.
+```go
+var x Sayer // 声明一个Sayer类型的变量x
+a := Cat{}  // 声明一个Cat类型变量a
+b := Dog{}  // 声明一个Dog类型变量b
+x = a       // 可以把Cat类型变量直接赋值给x
+x.Say()     // 喵喵喵
+x = b       // 可以把Dog类型变量直接赋值给x
+x.Say()     // 汪汪汪
+```
+## 值接收者和指针接收者
+在结构体那一章节中,我们介绍了在定义结构体方法时既可以使用值接收者也可以使用指针接收者.那么对于实现接口来说使用值接收者和使用指针接收者有什么区别呢?接下来我们通过一个例子看一下其中的区别.
+
+我们定义一个`Mover`接口,它包含一个`Move`方法.
+```go
+// Mover 定义一个接口类型
+type Mover interface {
+    Move()
+}
+```
+### 值接收者实现接口
+我们定了一个`Dog`结构体类型,并使用值接收者为其定义一个`Move`方法.
+```go
+// Dog 狗结构体类型
+type Dog struct{}
+
+// Move 使用值接收者定义Move方法实现Mover接口
+func (d Dog) Move() {
+    fmt.Println("狗会动")
+}
+```
+此时实现`Mover`接口的是`Dog`类型.
+```go
+var x Mover         // 声明一个Sayer类型的变量x
+
+var d1 = Dog{}      // d1是Dog类型
+x = d1              // 可以将d1赋值给变量x
+x.Move()
+
+var d2 = &Dog{}     // d2是Dog指针类型
+x = d2              // 也可以将d2赋值给变量x
+x.Move()
+```
+从上面的代码中我们可以发现,使用值接收者实现接口之后,不管是结构体类型还是对应的结构体指针类型的变量都可以赋值给该接口变量.
+
+### 指针接收者实现接口
+我们再来测试一下使用指针接收者实现接口有什么区别.
+```go
+// Cat 猫结构体类型
+type Cat struct{}
+
+// Move 使用指针接收者定义Move方法实现Mover接口
+func (c *Cat) Move() {
+    fmt.Println("猫会动")
+}
+```
+此时实现`Mover`接口的是`*Cat`类型,我们可以将`*Cat`类型的变量直接赋值给`Mover`接口类型的变量`x`.
+```go
+var c1 = &Cat{} // c1是*Cat类型
+x = c1          // 可以将c1当成Mover类型
+x.Move()
+```
+但是不能将`Cat`类型的变量赋值给`Mover`接口类型的变量`x`.
+```go
+// 下面的代码无法通过编译
+var c2 = Cat{}  // c2是Cat类型
+x = c2          // 但是不能将c2当成Mover类型
+```
+由于Go语言中有对指针求值的语法糖,对于值接收者实现的接口,无论使用值类型还是指针类型都没有问题.但是我们并不总是能对一个值求址,所以对于指针接收者实现的接口要额外注意.
+
+## 类型与接口的关系
+### 一个类型实现多个接口
+一个类型可以同时实现多个接口,而接口间彼此独立,不知道对方的实现.例如狗不仅可以叫,还可以动.我们完全可以分别定义`Sayer`接口和`Mover`接口,具体代码示例如下:
+```go
+// Sayer 接口
+type Sayer interface {
+    Say()
+}
+
+// Mover 接口
+type Mover interface {
+    Move()
+}
+```
+`Dog`既可以实现`Sayer`接口,也可以实现`Mover`接口.
+```go
+type Dog struct {
+    Name string
+}
+
+// 实现Sayer接口
+func (d Dog) Say() {
+    fmt.Printf("%s会叫汪汪汪\n", d.Name)
+}
+
+// 实现Mover接口
+func (d Dog) Move() {
+    fmt.Printf("%s会动\n", d.Name)
+}
+```
+同一个类型实现不同的接口互相不影响使用.
+```go
+var d = Dog{Name: "旺财"}
+
+var s Sayer = d
+var m Mover = d
+
+s.Say()     // 对Sayer类型调用Say方法
+m.Move()    // 对Mover类型调用Move方法
+```
+### 多种类型实现同一接口
+Go语言中不同的类型还可以实现同一接口.例如在我们的代码世界中不仅狗可以动,汽车也可以动.我们可以使用如下代码体现这个关系.
+```go
+// 实现Mover接口
+func (d Dog) Move() {
+    fmt.Printf("%s会动\n", d.Name)
+}
+
+// Car 汽车结构体类型
+type Car struct {
+    Brand string
+}
+
+// Move Car类型实现Move接口
+func (c Car) Move() {
+    fmt.Printf("%s速度70迈\n", c.Brand)
+}
+```
+这样我们在代码中就可以把狗和汽车当成一个会动的类型来处理,不必关注它们具体是什么,只需要调用它们的`Move`方法就可以了.
+```go
+var obj Mover
+
+obj = Dog{Name: "旺财"}
+obj.Move()
+
+obj = Car{Brand: "宝马"}
+obj.Move()
+```
+上面的代码执行结果如下:
+```
+旺财会跑
+宝马速度70迈
+```
+一个接口的所有方法,不一定需要由一个类型完全实现,接口的方法可以通过在类型中嵌入其他类型或者结构体来实现.
+```go
+// WashingMachine 洗衣机
+type WashingMachine interface {
+    wash()
+    dry()
+}
+
+// 甩干机
+type dryer struct{}
+
+// 实现WashingMachine接口的dry()方法
+func (d dryer) dry() {
+    fmt.Println("甩一甩")
+}
+
+// 海尔洗衣机
+type haier struct {
+    dryer   // 嵌入甩干机
+}
+
+// 实现WashingMachine接口的wash()方法
+func (h haier) wash() {
+    fmt.Println("洗刷刷")
+}
+```
+## 接口组合
+接口与接口之前可以通过互相嵌套形成新的接口类型,例如Go标准库`io`源码中就有很多接口之间的互相组合的示例.
+```go
+// src/io/io.go
+
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+
+type Closer interface {
+    Close() error
+}
+
+// ReadWriter 是组合Reader接口和Writer接口形成的新接口类型
+type ReadWriter interface {
+    Reader
+    Writer
+}
+
+// ReadCloser 是组合Reader接口和Closer接口形成的新接口类型
+type ReadCloser interface {
+    Reader
+    Closer
+}
+
+// WriteCloser 是组合Writer接口和Closer接口形成的新接口类型
+type WriteCloser interface {
+    Writer
+    Closer
+}
+```
+对于这种由多个接口类型组合形成的新接口类型,同样只需要实现新接口类型中规定的所有方法就算实现了该接口类型.
+
+接口也可以作为结构体的一个字段,我们来看一段Go标准库`sort`源码中的示例.
+```go
+// src/sort/sort.go
+
+// Interface 定义通过索引对元素排序的接口类型
+type Interface interface {
+    Len() int
+    Less(i, j int) bool
+    Swap(i, j int)
+}
+
+// reverse 结构体中嵌入了Interface接口
+type reverse sturct {
+    Interface
+}
+```
+通过在结构体中嵌入一个接口类型,从而让该结构体实现了该接口类型,并且还可以改写该接口的方法.
+```go
+// Less 为reverse类型添加Less方法,重写原Interface接口类型的Less方法
+func (r reverse) Less(i, j int) bool {
+    return r.Interface.Less(j, i)
+}
+```
+`Interface`类型原本的`Less`方法签名为`Less(i, j int) bool`,此处重写为`r.Interface.Less(j, i)`,即通过将索引参数交换位置实现反转.
+
+在这个示例中还有一个需要注意的地方是`reverse`结构体本身是不可导出的(结构体类型名称首字母小写),`sort.go`中通过定义一个可导出的`Reverse`函数来让使用者创建`reverse`结构体实例.
+```go
+func Reverse(data Interface) Interface {
+    return &reverse{data}
+}
+```
+这样做的目的是保证得到的`reverse`结构体中的`Interface`属性一定不为`nil`,否则`r.Interface.Less(j, i)`就会出现空指针panic.
+
+此外在Go内置标准库`database/sql`中也有很多类似的结构体内嵌接口类型的使用示例,各位读者可自行查阅.
+
+## 空接口
+### 空接口个的定义
+空接口是指没有定义任何方法的接口类型.因此任何类型都可以视为实现了空接口.也正是因为空接口类型的这个特性,空接口类型的变量可以存储任意类型的值.
+```go
+package main
+
+import "fmt"
+
+// 空接口
+
+// Any 不包含任何方法的空接口类型
+type Any interface{}
+
+// Dog 狗结构体
+type Dog struct{}
+
+func main() {
+    var x Any
+
+    x := "你好" // 字符串型
+    fmt.Printf("type:%T value:%v\n", x, x)
+    x = 100 // int型
+    fmt.Printf("type:%T value:%v\n", x, x)
+    x = true // 布尔型
+    fmt.Printf("type:%T value:%v\n", x, x)
+    x := Dog{} / 结构体类型
+    fmt.Printf("type:%T value:%v\n", x, x)
+}
+```
+通常我们在使用空接口类型时不必使用`type`关键字声明,可以像下面的代码一样直接使用`interface{}`.
+```go
+var x interface{} // 声明一个空接口类型变量x
+```
+### 空接口的应用
+**空接口作为函数的参数**
+使用空接口实现可以接收任意类型的函数参数.
+```go
+// 空接口作为函数参数
+func show(a interface{}) {
+    fmt.Printf("type:%T value:%v\n", a, a)
+}
+```
+**空接口作为map的值**
+使用空接口实现可以保存任意值的字典.
+```go
+// 空接口作为map值
+var studentInfo = make(map[string]interface{})
+studentInfo["name"] = "沙河娜扎"
+studentInfo["age"] = 18
+studentInfo["married"] = false
+fmt.Println(studentInfo)
+```
+## 接口值
+由于接口类型的值可以是任意个实现了该接口的类型值,所以接口值除了需要记录具体值外,还需要记录这个值属于的类型.也就是说接口值由“类型”和“值”组成,鉴于这两部分会根据存入值的不同而发生变化,我们称之为接口的`动态类型`和`动态值`.
+![interface01](img/interface01.png)
+我们接下来通过一个示例来加深对接口值的理解.
+
+下面的示例代码中,定义了一个`Mover`接口类型和两个实现了该接口的`Dog`和`Car`结构体类型.
+```go
+type Mover interface {
+    Move()
+}
+
+type Dog struct {
+    Name string
+}
+
+func (d *Dog) Move() {
+    fmt.Println("狗在跑~")
+}
+
+type Car struct {
+    Brand string
+}
+
+func (c *Car) Move() {
+    fmt.Println("汽车在跑~")
+}
+```
+首先,我们创建一个`Mover`接口类型的变量`m`.
+```go
+var m Mover
+```
+此时,接口变量`m`是接口类型的零值,也就是它的类型和值部分都是`nil`,就如下图所示.
+![interface02](img/interface02.png)
+我们可以使用`m == nil`来判断此时的接口值是否为空.
+```go
+fmt.Println(m == nil) // true
+```
+**注意:**我们不能对一个空接口值调用任何方法,否则会产生panic.
+```go
+m.Move() // panic: runtime error: invalid memory address or nil pointer dereference
+```
+接下来,我们将一个`Dog`结构体指针赋值给变量`m`.
+```go
+m = &Dog{Name: "旺财"}
+```
+此时,接口值`m`的动态类型会被设置为`*Dog`,动态值为结构体变量的拷贝.
+![interface03](img/interface03.png)
+然后,我们给接口变量`m`赋值为一个`*Car`类型的值.
+```go
+var c *Car
+m = c
+```
+这一次,接口值`m`的动态类型为`*Car`,动态值为`nil`.
+![interface04](img/interface04.png)
+**注意:**此时接口变量`m`与`nil`并不相等,因为它只是动态值的部分为`nil`,而动态类型部分保存着对应值的类型.
+```go
+fmt.Println(m == nil) // false
+```
+接口值是支持相互比较的,当且仅当接口值的动态类型和动态值都相等时才相等.
+```go
+var (
+    x Mover = new(Dog)
+    y Mover = new(Car)
+)
+fmt.Println(x == y) // false
+```
+但是有一种特殊情况需要特别注意,如果接口值保存的动态类型相同,但是这个动态类型不支持相互比较(比如切片),那么对它们相互比较时就会引发panic.
+```go
+var z interface{} = []int{1, 2, 3}
+fmt.Println(z == z) // panic: runtime error: comparing uncomparable type []int
+```
+
