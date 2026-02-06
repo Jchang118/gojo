@@ -274,4 +274,40 @@ close(ch)
 - 关闭一个已经关闭的通道会导致panic.
 
 ### 无缓冲的通道
-无缓冲的通道又
+无缓冲的通道又称为阻塞的通道.我们来看一下如下代码片段.
+```go
+func main() {
+    ch := make(chan int)
+    ch <- 10
+    fmt.Println("发送成功")
+}
+```
+上面这段代码能够通过编译,但是执行的时候会出现以下错误:
+```
+fatal error: all goroutines are asleep - deadlock!
+
+goroutine 1 [chan send]:
+main.main()
+        .../main.go:8 +0x54
+```
+`deadlock`表示我们程序中的goroutine都被挂起导致程序死锁了.为什么会出现`deadlock`错误呢?
+
+因为我们使用`ch := make(chan int)`创建的是无缓冲的通道,无缓冲的通道只有在接收方能够接收值的时候才能发送成功,否则会一直处于等待发送的阶段.同理,如果对一个无缓冲通道执行接收操作时,没有任何向通道中发送值的操作那么也会导致接收操作阻塞.就像田径比赛中的4x100接力赛,想要完成交棒必须有一个能接棒的运动员,否则只能等待.简单来说就是无缓冲的通道必须有至少一个接收方才能发送成功.
+
+上面的代码会阻塞在`ch <- 10`这一行代码形成死锁,那如何解决这个问题呢?
+
+其中一种可行的方法是创建一个goroutine去接收值,例如:
+```go
+func recv(c chan int) {
+    ret := <-c
+    fmt.Println("接收成功", ret)
+}
+
+func main() {
+    ch := make(chan int)
+    go recv(ch) // 创建一个goroutine从通道接收值
+    ch <- 10
+    fmt.Println("发送成功")
+}
+```
+
