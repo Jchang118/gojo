@@ -310,4 +310,387 @@ func main() {
     fmt.Println("发送成功")
 }
 ```
+首先无缓冲通道`ch`上的发送操作会阻塞,直到另一个goroutine在该通道上执行接收操作,这时数字10才能发送成功,两个goroutine将继续执行.相反,如果接收操作先执行,接收方所在的goroutine将阻塞,直到main goroutine中向该通道发送数字10.
 
+使用无缓冲通道进行通信将导致发送和接收的goroutine同步化.因此,无缓冲通道也被称为`同步通道`.
+
+### 有缓冲的通道
+还有另外一种解决上面死锁问题的方法,那就是使用有缓冲区的通道.我们可以在使用make函数初始化通道时,可以为其指定通道的容量,例如:
+```go
+func main() {
+    ch := make(chan int, 1) // 创建一个容量为1的有缓冲区通道
+    ch <- 10
+    fmt.Println("发送成功")
+}
+```
+只要通道的容量大于零,那么该通道就属于有缓冲的通道,通道的容量表示通道中最大能存放的元素数量.当通道内已有元素达到最大容量后,再向通道执行发送操作就会阻塞,除非有从通道执行接收操作.就像你小区的快递柜只有那么多个格子,格子满了就装不下了,就阻塞了,等到别人取走一个快递员就能往里面放一个.
+
+我们可以使用内置的`len`函数获取通道内元素的数量,使用`cap`函数获取通道的容量,虽然我们很少会这么做.
+
+### 多返回值模式
+当向通道中发送完数据时,我可以通过`close`函数来关闭通道.当一个通道被关闭后,再往该通道发送值会引发`panic`,从该通道取值的操作会先取完通道中的值.通道内的值被接收完后再对通道执行接收操作得到的值会一直都是该对应元素类型的零值.那我们如何判断一个通道是否被关闭了呢?
+
+对一个通道执行接收操作时支持使用如下多返回值模式.
+```go
+value, ok := <- ch
+```
+其中:
+- value: 从通道中取出的值,如果通道被关闭则返回对应类型的零值.
+- ok: 通道ch关闭时且所有元素都被取走时返回false,否则返回true.
+
+下面代码片段中的`f2`函数会循环从通道`ch`中接收所有值,直到通道被关闭后退出.
+```go
+func f2(ch chan int) {
+    for {
+        v, ok := <-ch
+        if !ok {
+            fmt.Println("通道已关闭")
+            break
+        }
+        fmt.Printf("v:%#v ok:%#v\n", v, ok)
+    }
+}
+
+func main() {
+    ch := make(chan int, 2)
+    ch <- 1
+    ch <- 2
+    close(ch)
+    f2(ch)
+}
+```
+### for range接收值
+通常我们会选择使用`for range`循环从通道中接收值,当通道被关闭后,会在通道内的所有值被接收完毕后自动退出循环.上面哪个示例我们使用`for range`改写后会很简洁.
+```go
+func f#(ch chan int) {
+    for v := range ch {
+        fmt.Println(v)
+    }
+}
+```
+**注意:** 目前Go语言中并没有提供一个不对通道进行读取操作就能判断通道是否被关闭的方法.不能简单的通过`len(ch)`操作来判断通道是否被关闭.
+
+### 单向通道
+在某些场景下我们可能会将通道作为参数在多个任务函数间进行传递,通常我们会选择在不同的任务函数中对通道的使用进行限制,比如限制通道在某个函数中只能执行发送或只能执行接收操作.想象一下,我们现在有`Producer`和`Consumer`两个函数,其中`Producer`函数会返回一个通道,并且会持续将符合条件的数据发送至该通道,并且在发送完成后将该通道关闭.而`Consumer`函数的任务是从通道中接收值进行计算,这两个函数之间通过`Producer`函数返回的通道进行通信.完整的示例代码如下.
+```go
+package main
+
+import "fmt"
+
+// Producer 返回一个通道
+// 并持续将符合条件的数据发送至返回的通道中
+// 数据发送完成后会将返回的通道关闭
+func Producer() chan int {
+    ch := make(chan int, 2)
+    // 创建一个新的goroutine执行发送数据的任务
+    go func() {
+        for i := 0; i < 10; i++ {
+            if i%2 == 1 {
+                ch <- i
+            }
+        }
+        close(ch)   // 任务完成后关闭通道
+    }()
+    
+    return ch
+}
+
+// Consumer 从通道中接收数据进行计算
+func Consumer(ch chan int) int {
+    sum := 0
+    for v := range ch {
+        sum += v
+    }
+    return sum
+}
+
+func main() {
+    ch := Producer()
+    
+    res := Consumer(ch)
+    fmt.Println(res)    // 25
+}
+```
+从上面的示例代码中可以看出正常情况下`Consumer`函数中只会对通道进行接收操作,但这不代表不可以在`Consumer`函数中对通道进行发送操作.作为`Producer`函数的提供者,我们在返回通道的时候可能只希望调用方拿到返回的通道后只能对其进行接收操作.但是我们没有办法阻止在`Consumer`函数中对通道进行发送操作.
+
+Go语言中提供了**单向通道**来处理这种需要限制通道只能进行某种操作的情况.
+```go
+<- chan int // 只接收通道,只能接收不能发送
+chan <- int // 只发送通道,只能发送不能接收
+```
+其中,箭头`<-`和关键字`chan`的相对位置表明了当前通道允许的操作,这种限制将在编译阶段进行检测.另外对一个只接收通道执行close也是不允许的,因为默认通道的关闭操作应该由发送方来完成.
+
+我们使用单向通道将上面的示例代码进行如下改造.
+```go
+// Producer2 返回一个接收通道
+func Producer2() <-chan int {
+    ch := make(chan int, 2)
+    // 创建一个新的goroutine执行发送数据的任务
+    go func() {
+        for i := 0; i< 10; i++ {
+            if i%2 == 1 {
+                ch <- i
+            } 
+        }
+        close(ch)
+    }()
+
+    return ch
+}
+
+// Consermer2 参数为接收通道
+func Consumer2(ch <-chan int) int {
+    sum := 0
+    for v := range ch {
+        sum += v
+    }
+    return sum
+}
+
+func main() {
+    ch2 := Producer2()
+    
+    res2 := Consermer2(ch2)
+    fmt.Prtinln(res2)   // 25
+}
+```
+这一次,`Producer2`函数返回的是一个只接收通道,这就从代码层面限制了该函数返回的通道只能进行接收操作,保证了数据安全.很多读者看到这个示例可能会觉得这样的限制是多余的,但是试想一下如果`Producer`函数可以在其他地方被其他人调用,你该如何限制他人不对该通道执行发送操作呢?并且返回限制操作的单向通道也会让代码语义更清晰、更易读.
+
+在函数传参及任何赋值操作中全向通道(正常通道)可以转换为单向通道,但是无法反向转换.
+```go
+var ch3 = make(chan int, 1)
+ch3 <- 10
+close(ch3)
+Consermer2(ch3) // 函数传参时将ch3转为单向通道
+
+var ch4 = make(chan int, 1)
+ch4 <- 10
+var ch5 <-chan int  // 声明一个只接收通道ch5
+ch5 = ch4           // 变量赋值时将ch4转为单向通道
+<-ch5
+```
+### 总结
+下面的表格中总结了对不同状态下的通道执行相应操作的结果.
+![channel](img/channel.png)
+**注意:** 对已经关闭的通道再执行close也会引发panic.
+
+## select多路复用
+在某些场景下我们可能需要同时从多个通道接收数据.通道在接收数据时,如果没有数据可以接收那么当前goroutine将会发生阻塞.你也许会写出如下代码尝试使用遍历的方法来实现从多个通道中接收值.
+```go
+for {
+    // 尝试从ch1接收值
+    data, ok := <-ch1
+    // 尝试从ch2接收值
+    data, ok := <-ch2
+    ...
+}
+```
+这种方式虽然可以实现从多个通道接收值的需求,但是程序的运行性能会差很多.Go语言内置了`select`关键字,使用它可以同时响应多个通道的操作.
+
+Select的使用方式类似于之前学到的switch语句,它也有一系列case分支和一个默认的分支.每个case分支会对应一个通道的通信(接收或发送)过程.select会一直等待,直到其中的某个case的通信操作完成时,就是执行该case分支对应的语句.具体格式如下:
+```go
+select {
+case <-ch1:
+    //...
+case data := <-ch2:
+    //...
+case ch3 <- 10:
+    //...
+default:
+    // 默认操作
+}
+```
+Select语句具有以下特点:
+- 可处理一个或多个channel的发送/接收操作.
+- 如果多个case同时满足,select会**随机**选择一个执行.
+- 对于没有case的select会一直阻塞,可用于阻塞main函数,防止退出.
+
+下面的示例代码能够在终端打印出10以内的奇数,我们借助这个代码片段来看一下select的具体使用.
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := make(chan int, 1)
+    for i := 1; i < 10; i++ {
+        select {
+        case x := <- ch:
+            fmt.Println(x)
+        case ch <- i:
+        }
+    }
+}
+```
+上面的代码输出内容如下:
+```
+1
+3
+5
+7
+9
+```
+示例中的代码首先是创建了一个缓冲区大小为1的通道ch,进入for循环后:
+- 第一次循环时i = 1,select语句中包含两个case分支,此时由于通道中没有值可以接收,所以x := <-ch这个case分支不满足,而ch <- i这个分支可以执行,会把1发送到通道中,结束本次for循环;
+- 第二次for循环时,i = 2,由于通道缓冲区已满,所以ch <- i这个分支不满足,而x := <-ch这个分支可以执行,从通道接收值1并赋值给变量x,所以会在终端打印出1;
+- 后续的for循环以此类推会一次打印出3、5、7、9.
+
+## 通道误用示例
+接下来,我们将展示两个因误用通道导致程序出现bug的代码片段,希望能够加深读者对通道操作的印象.
+
+**示例1**
+各位读者可以查看以下示例代码,尝试找出其中存在问题.
+```go
+// demo1 通道误用导致的bug
+func demo1() {
+    wg := sync.WaitGroup{}
+
+    ch := make(chan int, 10)
+    for i := 0; i < 10; i++ {
+        ch <- i
+    }
+    close(ch)
+    
+    wg.Add(3)
+    for j := 0; j < 3; j++ {
+        go func() {
+            for {
+                task := <- ch
+                // 这里假设对接收的数据执行某些操作
+                fmt.Println(task)
+            }
+            wg.Done()
+        }()
+    }
+    wg.Wait()
+}
+```
+将上述代码编译执行后,匿名函数所在的goroutine并不会按照预期在通道被关闭后退出.因为`task := <-ch`的接收操作在通道被关闭后会一直接收到零值,而不会退出.此处的接收操作应该使用`task, ok := <-ch`,通过判断布尔值`ok`为假时退出;或者使用select来处理通道.
+
+**示例2**
+各位读者阅读下方代码片段,尝试找出其中存在的问题.
+```go
+// demo2 通道误用导致的bug
+func demo2() {
+    ch := make(chan string)
+    go func() {
+        // 这里假设执行一些耗时的操作
+        time.Sleep(3 * time.Second)
+        ch <- "job result"
+    }()
+
+    select {
+    case result := <-ch:
+        fmt.Println(result)
+    case <-time.After(time.Second): // 较小的超时时间
+        return
+    }
+}
+```
+上述代码片段可能导致goroutine泄漏(goroutine并未按预期退出并销毁).由于select命中了超时逻辑,导致通道没有消费者(无接收操作),而其定义的通道为无缓冲通道,因此goroutine中的`ch <- "job result`操作会一直阻塞,最终导致goroutine泄漏.
+
+## 并发安全和锁
+有时有我们的代码中可能会存在多个goroutine同时操作一个资源(临界区)的情况,这种情况下就会发生`竞态问题`(数据竞态).这就好比现实生活中十字路口被各个方向的汽车竞争,还有火车上的卫生间被车厢里的人竞争.
+
+我们用下面的代码演示一个数据竞争的示例.
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+var (
+    x int64
+    wg sync.WaitGroup   // 等待组
+)
+
+// add 对全局变量x执行5000次加1操作
+func add() {
+    for i := 0; i < 5000; i++ {
+        x = x + 1
+    }
+    wg.Done()
+}
+
+func main() {
+    wg.Add(2)
+
+    go add()
+    go add()
+
+    wg.Wait()
+    fmt.Println(x)
+}
+```
+我们将上面的代码编译后执行,不出意外每次执行都会输出诸如9537、5865、6527等不同的结构.这是为什么呢?
+
+在上面的示例代码片中,我们开启了两个goroutine分别执行add函数,这两个goroutine在访问和修改全局的`x`变量时就会存在数据竞争,某个goroutine中对全局变量`x`的修改可能会覆盖掉另一个goroutine中的操作,所以导致最后的结果与预期不符.
+
+### 互斥锁
+互斥锁是一种常见的控制共享资源访问的方法,它能够保证同一时间只有一个goroutine可以访问共享资源.Go语言中使用`sync`包中提供的`Mutex`类型来实现互斥锁.
+
+`sync.Mutex`提供了两个方法供我们使用.
+|方法名|功能|
+|------|----|
+|func (m *Mutex) Lock()|获取互斥锁|
+|func (m *Mutex) Unlock()|释放互斥锁|
+我们从下面的示例代码中使用互斥锁限制每次只有一个goroutine才能修改全局变量`x`,从而修复上面代码中的问题.
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+// sync.Mutex
+
+var (
+    x int64
+    wg sync.WaitGroup   // 等待组
+    m sync.Mutex    // 互斥锁
+)
+
+// add 对全局变量x执行5000次加1操作
+func add() {
+    for i := 0; i< 5000; i++ {
+        m.Lock()    // 修改x前加锁
+        x = x + 1
+        m.Unlock()  // 改完解锁
+    }
+    wg.Done()
+}
+
+func main() {
+    wg.Add(2)
+
+    go add()
+    go add()
+
+    wg.Wait()
+    fmt.Println(x)
+}
+```
+将上面的代码编译后多次执行,每一次都会得到预期中的结果--10000.
+
+使用互斥锁能够保证同一时间有且只有一个goroutine进入临界区,其他的goroutine则在等待锁;当互斥锁释放后,等待的goroutine才可以获取锁进入临界区,多个goroutine同时等待一个锁时,唤醒的策略是随机的.
+
+### 读写互斥锁
+互斥锁是完全互斥的,但是实际上有很多场景是读多写少的,当我们并发的去读取一个资源而不涉及资源修改的时候是没有必要加互斥锁的,这种场景下使用读写锁是更好的一种选择.读写锁在Go语言中使用`sync`包中的`RWMutex`类型.
+
+`sync.RWMutex`提供了以下5个方法.
+|方法名|功能|
+|------|----|
+|func (rw *RWMutex) Lock()|获取写锁|
+|func (rw *RWMutex) Unlock()|释放写锁|
+|func (rw *RWMutex) RLock()|获取读锁|
+|func (rw *RWMutex) RUnlock()|释放读锁|
+|func (rw *RWMutex) RLocker() Locker|返回一个实现Locker接口的读写锁|
+读写锁分为两种:读锁和写锁.当一个goroutine获取到读锁之后,其他的goroutine如果是获取读锁会继续获得锁,如果是获取写锁就会等待;而当一个goroutine获取写锁之后,其他的goroutine无论是获取读锁还是写锁都会等待.
+
+下面我们使用代码构造一个读多写少的场景,然后分别使用互斥锁和读写锁查看它们的性能差异.
+```go
+
+```
